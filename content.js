@@ -54,34 +54,78 @@ function getMessageId(el) {
   }
 }
 
+// Вспомогательная функция: оставить в клоне группы только указанное сообщение по ID
+function filterGroupToMessage(groupClone, targetMessageId) {
+  // Удаляем все сообщения, кроме нужного
+  const messages = groupClone.querySelectorAll('.Message.message-list-item');
+  for (const msg of messages) {
+    const msgId = msg.getAttribute('data-message-id');
+    if (msgId !== targetMessageId) {
+      msg.remove();
+    }
+  }
+  
+  // Удаляем контейнер с аватаром, который растягивает группу
+  const avatarContainers = groupClone.querySelectorAll('.UPrRM3Ks, .Avatar, [class*="avatar-container"]');
+  avatarContainers.forEach(el => el.style.height="100%");
+  
+  // Сбрасываем фиксированные высоты
+  groupClone.style.height = 'auto';
+  groupClone.style.minHeight = '0';
+  groupClone.style.maxHeight = 'none';
+  
+  return groupClone;
+}
+
 function extractMessage(el) {
   let text, time, sender;
+  let clonedElement;
+
   if (isTelegram) {
+    // Находим родительскую группу
+    const group = el.closest('.sender-group-container');
+    if (group) {
+      // Клонируем группу с вычисленными стилями
+      const groupClone = cloneWithComputedStyles(group);
+      // Оставляем только нужное сообщение
+      const msgId = el.getAttribute('data-message-id');
+      clonedElement = filterGroupToMessage(groupClone, msgId);
+    } else {
+      // Если группы нет, клонируем само сообщение (запасной вариант)
+      clonedElement = cloneWithComputedStyles(el);
+    }
+
     const textEl = el.querySelector('.text-content');
     text = textEl?.innerText?.trim() || '';
-    const senderEl = el.querySelector('.sender-title');
+    const senderEl = el.querySelector('.sender-title') || group?.querySelector('.sender-title');
     sender = senderEl?.innerText?.trim() || 'Telegram';
     const timeEl = el.querySelector('.message-time');
     time = parseTelegramTime(timeEl?.innerText?.trim() || '');
   } else {
+    // VK остаётся без изменений
     const textEl = el.querySelector('.MessageText');
     text = textEl?.innerText?.trim() || '';
     const senderEl = el.querySelector('.PeerTitle__title');
     sender = senderEl?.innerText?.trim() || 'VK';
     const timeEl = el.querySelector('.ConvoMessageInfoWithoutBubbles__date');
     time = parseVKTime(timeEl?.innerText?.trim() || '');
+
+    clonedElement = cloneWithComputedStyles(el);
+
+    // Удаляем прелоадеры видео в VK
+    if (isVK) {
+      const loadingElements = clonedElement.querySelectorAll('.AttachVideoMessage__loading');
+      loadingElements.forEach(elem => elem.remove());
+    }
   }
-  
-  // Клонируем с вычисленными стилями
-  const cloned = cloneWithComputedStyles(el);
-  
+
   return {
     id: getMessageId(el),
     text,
     sender,
     time,
     source: isTelegram ? 'telegram' : 'vk',
-    elementHTML: cloned.outerHTML
+    elementHTML: clonedElement.outerHTML
   };
 }
 
