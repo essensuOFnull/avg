@@ -99,8 +99,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function forceScanTab(tabId) {
   try {
     console.log('[Background] Force scanning tab', tabId);
-    await chrome.tabs.update(tabId, { active: true });
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // НЕ активируем вкладку! Просто отправляем сообщение
     chrome.tabs.sendMessage(tabId, { type: 'SCAN_NOW' }).catch(() => {});
   } catch (e) {
     console.error('[Background] Force scan error', e);

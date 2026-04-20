@@ -198,6 +198,9 @@ window.addEventListener('scroll', () => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SCAN_NOW') {
-    scanMessages();
+    // Используем requestAnimationFrame для щадящего сканирования
+    requestAnimationFrame(() => {
+      scanMessages();
+    });
   }
 });
