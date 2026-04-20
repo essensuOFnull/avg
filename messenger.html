@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="messenger.css">
+</head>
+<body>
+  <div class="messenger-container">
+    <div class="header">
+      <span class="title">UniMessenger</span>
+      <span class="room-info" id="room-info">Загрузка...</span>
+      <button id="refresh-btn" class="refresh-btn" title="Обновить сообщения">⟳</button>
+    </div>
+    
+    <div class="messages-container" id="messages-container"></div>
+    
+    <div class="input-area">
+      <textarea id="message-input" placeholder="Введите сообщение..." rows="1"></textarea>
+      <button id="send-button">➤</button>
+    </div>
+  </div>
+  
+  <script src="lib/purify.min.js"></script>
+  <script src="messenger.js"></script>
+</body>
+</html>
