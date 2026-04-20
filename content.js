@@ -15,11 +15,20 @@ function cloneWithComputedStyles(element) {
     let styleString = '';
     for (let i = 0; i < computed.length; i++) {
       const prop = computed[i];
-      styleString += `${prop}: ${computed.getPropertyValue(prop)}; `;
+      const value = computed.getPropertyValue(prop);
+      // Пропускаем свойства, название или значение которых содержит 'blur'
+      if (prop.toLowerCase().includes('blur') || value.toLowerCase().includes('blur')) {
+        continue;
+      }
+      styleString += `${prop}: ${value}; `;
     }
     target.style.cssText = styleString;
     
-    // Рекурсивно для дочерних
+    // Дополнительно удаляем классы, содержащие 'blurred' (если нужно)
+    if (target.className && typeof target.className === 'string') {
+      target.className = target.className.split(' ').filter(c => !c.toLowerCase().includes('blurred')).join(' ');
+    }
+    
     const sourceChildren = source.children;
     const targetChildren = target.children;
     for (let i = 0; i < sourceChildren.length; i++) {
@@ -36,6 +45,9 @@ function getMessageId(el) {
     const msgId = el.getAttribute('data-message-id') || '';
     return `tg-${msgId}`;
   } else {
+    // Более надёжный ID для VK
+    const msgId = el.getAttribute('data-msgid') || el.getAttribute('data-id');
+    if (msgId) return `vk-${msgId}`;
     const text = el.querySelector('.MessageText')?.innerText || '';
     const time = el.querySelector('.ConvoMessageInfoWithoutBubbles__date')?.innerText || '';
     return `vk-${text}-${time}`;
@@ -94,9 +106,11 @@ function scanMessages() {
   console.log('[Content] Scanning messages on', location.hostname);
   let selector;
   if (isTelegram) {
-    selector = '.Message.message-list-item';
+    // Универсальный селектор для Telegram Web
+    selector = '.Message.message-list-item, .message-list-item';
   } else {
-    selector = '.ConvoHistory__messageWrapper .ConvoMessageWithoutBubble';
+    // VK: основной селектор сообщений
+    selector = '.ConvoHistory__messageWrapper .ConvoMessageWithoutBubble, .im-mess-stack--mess';
   }
   
   const messages = document.querySelectorAll(selector);
@@ -125,11 +139,18 @@ function scanMessages() {
   }
 }
 
-setTimeout(scanMessages, 2000);
-setInterval(scanMessages, 3000);
+// Запускаем сканирование при загрузке и при изменениях DOM
+setTimeout(scanMessages, 1000);
+setInterval(scanMessages, 2000); // более частое сканирование
 
 const observer = new MutationObserver(() => scanMessages());
 observer.observe(document.body, { childList: true, subtree: true });
+
+// Также реагируем на события скролла, т.к. новые сообщения могут подгружаться при прокрутке
+window.addEventListener('scroll', () => {
+  // Небольшая задержка, чтобы DOM обновился
+  setTimeout(scanMessages, 300);
+}, { passive: true });
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SCAN_NOW') {

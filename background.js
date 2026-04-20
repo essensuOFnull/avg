@@ -1,5 +1,17 @@
 const activeRooms = new Map();
 
+// Отслеживаем закрытие окон мессенджера
+chrome.windows.onRemoved.addListener((windowId) => {
+  for (const [roomId, room] of activeRooms.entries()) {
+    if (room.windowId === windowId) {
+      console.log(`[Background] Messenger window closed for room ${roomId}, closing tabs`);
+      chrome.tabs.remove([room.tgTabId, room.vkTabId]).catch(() => {});
+      activeRooms.delete(roomId);
+      break;
+    }
+  }
+});
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[Background] Received:', message.type, sender.tab?.id);
   
@@ -45,7 +57,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   if (message.type === 'OPEN_MESSENGER') {
-    openUnifiedMessenger(message.room);
+    // Вызываем асинхронную функцию, но сразу отвечаем, что запрос принят
+    openUnifiedMessenger(message.room)
+      .then(() => sendResponse({ success: true }))
+      .catch((err) => {
+        console.error('[Background] Failed to open messenger:', err);
+        sendResponse({ success: false, error: err.message });
+      });
+    return true; // указывает, что sendResponse будет вызван асинхронно
   }
   
   if (message.type === 'GET_ROOM_INFO') {
@@ -66,43 +85,96 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       forceScanTab(room.vkTabId);
     }
   }
+
+  if (message.type === 'SCROLL_TABS') {
+    const { roomId, direction } = message;
+    const room = activeRooms.get(roomId);
+    if (room) {
+      scrollTabTo(room.tgTabId, direction);
+      scrollTabTo(room.vkTabId, direction);
+    }
+  }
 });
 
 async function forceScanTab(tabId) {
   try {
     console.log('[Background] Force scanning tab', tabId);
     await chrome.tabs.update(tabId, { active: true });
-    await new Promise(resolve => setTimeout(resolve, 1000));
+    await new Promise(resolve => setTimeout(resolve, 500));
     chrome.tabs.sendMessage(tabId, { type: 'SCAN_NOW' }).catch(() => {});
   } catch (e) {
     console.error('[Background] Force scan error', e);
   }
 }
 
+async function scrollTabTo(tabId, direction) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (dir) => {
+        if (dir === 'top') {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        } else if (dir === 'bottom') {
+          window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+        const container = document.querySelector('.messages-container') || document.body;
+        if (dir === 'top') container.scrollTop = 0;
+        else container.scrollTop = container.scrollHeight;
+      },
+      args: [direction]
+    });
+  } catch (e) {
+    console.error('[Background] Scroll tab error', e);
+  }
+}
+
 async function openUnifiedMessenger(room) {
   console.log('[Background] Opening messenger for room', room);
-  const tgTab = await chrome.tabs.create({ url: room.tgUrl, active: true });
-  const vkTab = await chrome.tabs.create({ url: room.vkUrl, active: true });
   
-  await new Promise(resolve => setTimeout(resolve, 3000));
-  
-  const groupId = await chrome.tabs.group({ tabIds: [tgTab.id, vkTab.id] });
-  await chrome.tabGroups.update(groupId, { collapsed: true, title: 'UniMessenger Background' });
-  
-  const roomId = Date.now().toString();
-  activeRooms.set(roomId, {
-    id: roomId,
-    tgTabId: tgTab.id,
-    vkTabId: vkTab.id,
-    key: room.key
-  });
-  
-  await chrome.windows.create({
-    url: `messenger.html?roomId=${roomId}`,
-    type: 'popup',
-    width: 900,
-    height: 700
-  });
+  try {
+    if (!room.tgUrl || !room.vkUrl) {
+      throw new Error('Missing Telegram or VK URL');
+    }
+
+    // Создаём вкладки (без muted)
+    const tgTab = await chrome.tabs.create({ url: room.tgUrl, active: true });
+    const vkTab = await chrome.tabs.create({ url: room.vkUrl, active: true });
+    
+    // Отключаем звук отдельным вызовом
+    await chrome.tabs.update(tgTab.id, { muted: true });
+    await chrome.tabs.update(vkTab.id, { muted: true });
+    
+    console.log('[Background] Created and muted tabs:', tgTab.id, vkTab.id);
+    
+    await new Promise(resolve => setTimeout(resolve, 3000));
+    
+    const groupId = await chrome.tabs.group({ tabIds: [tgTab.id, vkTab.id] });
+    await chrome.tabGroups.update(groupId, { collapsed: true, title: 'UniMessenger Background' });
+    
+    const roomId = Date.now().toString();
+    
+    const messengerWindow = await chrome.windows.create({
+      url: `messenger.html?roomId=${roomId}`,
+      type: 'popup',
+      width: 900,
+      height: 700
+    });
+    
+    console.log('[Background] Messenger window created:', messengerWindow.id);
+    
+    activeRooms.set(roomId, {
+      id: roomId,
+      tgTabId: tgTab.id,
+      vkTabId: vkTab.id,
+      key: room.key,
+      windowId: messengerWindow.id
+    });
+    
+    console.log('[Background] Room registered:', roomId);
+  } catch (error) {
+    console.error('[Background] Error in openUnifiedMessenger:', error);
+    throw error;
+  }
 }
 
 function findRoomByTabId(tabId) {
@@ -132,7 +204,6 @@ async function sendMessageToTab(tabId, text) {
             }, 100);
           }
         } else {
-          // VK: расширенный поиск поля ввода
           const input = document.querySelector('[contenteditable="true"][role="textbox"]') 
                      || document.querySelector('[contenteditable="true"]')
                      || document.querySelector('.im-chat-input--text')

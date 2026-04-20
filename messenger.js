@@ -17,11 +17,13 @@ chrome.runtime.sendMessage({ type: 'GET_ROOM_INFO', roomId }, (response) => {
   }
 });
 
+// Запрашиваем первоначальное сканирование
 setTimeout(() => {
   console.log('[Messenger] Requesting initial scan');
   chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', roomId });
 }, 2000);
 
+// Регулярное сканирование (можно оставить как есть)
 setInterval(() => {
   if (roomId) {
     chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', roomId });
@@ -57,13 +59,10 @@ function addMessages(source, messages) {
     wrapper.dataset.id = msg.id;
     wrapper.dataset.time = msg.time;
     
-    // Вставляем оригинальный HTML (уже с inline-стилями)
+    // Вставляем оригинальный HTML без санитизации
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-original-content';
-    contentDiv.innerHTML = DOMPurify.sanitize(msg.elementHTML, {
-      FORBID_TAGS: ['script', 'iframe', 'object', 'embed'],
-      FORBID_ATTR: ['onclick', 'onload', 'onerror']
-    });
+    contentDiv.innerHTML = msg.elementHTML; // отключена защита
     
     const header = document.createElement('div');
     header.className = 'message-header';
@@ -74,9 +73,13 @@ function addMessages(source, messages) {
       : 'https://vk.com/favicon.ico';
     sourceIcon.alt = source;
     
-    const senderSpan = document.createElement('span');
-    senderSpan.className = 'sender';
-    senderSpan.textContent = msg.sender || (source === 'telegram' ? 'Telegram' : 'VK');
+    // Добавляем текстовую метку источника (по желанию)
+    const sourceLabel = document.createElement('span');
+    sourceLabel.className = 'source-label';
+    sourceLabel.textContent = source === 'telegram' ? 'Telegram' : 'VK';
+    sourceLabel.style.marginLeft = '6px';
+    sourceLabel.style.fontSize = '12px';
+    sourceLabel.style.color = '#8d9aa9';
     
     const timeSpan = document.createElement('span');
     timeSpan.className = 'time';
@@ -85,9 +88,10 @@ function addMessages(source, messages) {
     const lockSpan = document.createElement('span');
     lockSpan.className = `lock-icon ${encrypted ? 'lock-closed' : 'lock-open'}`;
     lockSpan.textContent = encrypted ? '🔒' : '🔓';
+    lockSpan.style.marginLeft = 'auto';
     
     header.appendChild(sourceIcon);
-    header.appendChild(senderSpan);
+    header.appendChild(sourceLabel);
     header.appendChild(timeSpan);
     header.appendChild(lockSpan);
     
@@ -99,20 +103,21 @@ function addMessages(source, messages) {
   });
 }
 
+// Оптимизированная вставка с сортировкой по времени
 function insertSorted(container, newEl, time) {
   const children = Array.from(container.children);
-  let inserted = false;
-  for (let i = 0; i < children.length; i++) {
-    const childTime = parseInt(children[i].dataset.time) || 0;
-    if (time < childTime) {
-      container.insertBefore(newEl, children[i]);
-      inserted = true;
-      break;
+  // Бинарный поиск для ускорения
+  let low = 0, high = children.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    const childTime = parseInt(children[mid].dataset.time) || 0;
+    if (childTime < time) {
+      low = mid + 1;
+    } else {
+      high = mid;
     }
   }
-  if (!inserted) {
-    container.appendChild(newEl);
-  }
+  container.insertBefore(newEl, children[low] || null);
   container.scrollTop = container.scrollHeight;
 }
 
@@ -147,7 +152,31 @@ async function sendMessage() {
   }, 2000);
 }
 
-// Crypto functions
+// ========== СИНХРОНИЗАЦИЯ ПРОКРУТКИ ==========
+const scrollContainer = document.getElementById('messages-container');
+let scrollTimeout;
+
+scrollContainer.addEventListener('scroll', () => {
+  clearTimeout(scrollTimeout);
+  scrollTimeout = setTimeout(() => {
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainer;
+    const isAtTop = scrollTop <= 5;
+    const isAtBottom = scrollTop + clientHeight >= scrollHeight - 5;
+    
+    if (isAtTop || isAtBottom) {
+      const direction = isAtTop ? 'top' : 'bottom';
+      console.log(`[Messenger] Reached ${direction}, syncing tabs`);
+      chrome.runtime.sendMessage({ 
+        type: 'SCROLL_TABS', 
+        roomId, 
+        direction 
+      });
+    }
+  }, 150);
+});
+// =========================================
+
+// Crypto functions (без изменений)
 async function deriveKey(password, salt) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(
