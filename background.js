@@ -15,6 +15,23 @@ chrome.windows.onRemoved.addListener((windowId) => {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   console.log('[Background] Received:', message.type, sender.tab?.id);
   
+  if (message.type === 'REQUEST_STYLES_COLLECTION') {
+    const room = activeRooms.get(message.roomId);
+    if (room) {
+      chrome.tabs.sendMessage(room.tgTabId, { type: 'COLLECT_STYLES' }).catch(() => {});
+      chrome.tabs.sendMessage(room.vkTabId, { type: 'COLLECT_STYLES' }).catch(() => {});
+    }
+  }
+
+  if (message.type === 'SAVE_STYLES') {
+    const { source, css } = message;
+    const key = source === 'telegram' ? 'tgStyles' : 'vkStyles';
+    chrome.storage.local.set({ [key]: css }, () => {
+      console.log(`[Background] Saved ${source} styles`);
+    });
+    return;
+  }
+
   if (message.type === 'NEW_MESSAGES') {
     const roomId = findRoomByTabId(sender.tab.id);
     console.log('[Background] Messages from tab', sender.tab.id, 'room', roomId);

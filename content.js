@@ -4,48 +4,84 @@ const processedIds = new Set();
 
 console.log('[Content] Loaded on', location.hostname);
 
-// Функция глубокого клонирования с вычисленными стилями
-function cloneWithComputedStyles(element) {
-  const clone = element.cloneNode(true);
+// --- БЛОК ОТКЛЮЧЕНИЯ АВТОВОСПРОИЗВЕДЕНИЯ ДЛЯ VK (без изменений) ---
+if (isVK) {
+  const style = document.createElement('style');
+  style.textContent = `
+    video, audio {
+      autoplay: false !important;
+      -webkit-media-controls-auto-play-button: none !important;
+    }
+  `;
+  document.head.appendChild(style);
   
-  function applyStyles(source, target) {
-    if (source.nodeType !== Node.ELEMENT_NODE) return;
-    
-    const computed = window.getComputedStyle(source);
-    let styleString = '';
-    for (let i = 0; i < computed.length; i++) {
-      const prop = computed[i];
-      const value = computed.getPropertyValue(prop);
-      // Пропускаем свойства, название или значение которых содержит 'blur'
-      if (prop.toLowerCase().includes('blur') || value.toLowerCase().includes('blur')) {
-        continue;
-      }
-      styleString += `${prop}: ${value}; `;
-    }
-    target.style.cssText = styleString;
-    
-    // Дополнительно удаляем классы, содержащие 'blurred' (если нужно)
-    if (target.className && typeof target.className === 'string') {
-      target.className = target.className.split(' ').filter(c => !c.toLowerCase().includes('blurred')).join(' ');
-    }
-    
-    const sourceChildren = source.children;
-    const targetChildren = target.children;
-    for (let i = 0; i < sourceChildren.length; i++) {
-      applyStyles(sourceChildren[i], targetChildren[i]);
-    }
+  function pauseAllMedia() {
+    document.querySelectorAll('video, audio').forEach(el => {
+      el.muted = true;
+      el.pause();
+      el.autoplay = false;
+    });
   }
+  setInterval(pauseAllMedia, 2000);
   
-  applyStyles(element, clone);
-  return clone;
+  const mediaObserver = new MutationObserver((mutations) => {
+    mutations.forEach(mut => {
+      mut.addedNodes.forEach(node => {
+        if (node.nodeName === 'VIDEO' || node.nodeName === 'AUDIO') {
+          node.muted = true;
+          node.pause();
+          node.autoplay = false;
+        } else if (node.querySelectorAll) {
+          node.querySelectorAll('video, audio').forEach(el => {
+            el.muted = true;
+            el.pause();
+            el.autoplay = false;
+          });
+        }
+      });
+    });
+  });
+  mediaObserver.observe(document.body, { childList: true, subtree: true });
 }
+// -------------------------------------------------
+
+// Функция для извлечения всех стилей текущей страницы
+function getAllStyles() {
+  let styleText = '';
+  try {
+    const styleSheets = document.styleSheets;
+    for (let sheet of styleSheets) {
+      try {
+        const rules = sheet.cssRules || sheet.rules;
+        if (rules) {
+          for (let rule of rules) {
+            styleText += rule.cssText + '\n';
+          }
+        }
+      } catch (e) {
+        // Межсайтовые таблицы стилей недоступны – игнорируем
+        console.warn('[Content] Cannot access stylesheet:', e);
+      }
+    }
+  } catch (e) {}
+  
+  // Добавляем инлайн-стили, определённые в <style>
+  document.querySelectorAll('style').forEach(style => {
+    styleText += style.textContent + '\n';
+  });
+  
+  return styleText;
+}
+
+// Однократно собираем стили страницы
+const pageStyles = getAllStyles();
+console.log('[Content] Collected styles length:', pageStyles.length);
 
 function getMessageId(el) {
   if (isTelegram) {
     const msgId = el.getAttribute('data-message-id') || '';
     return `tg-${msgId}`;
   } else {
-    // Более надёжный ID для VK
     const msgId = el.getAttribute('data-msgid') || el.getAttribute('data-id');
     if (msgId) return `vk-${msgId}`;
     const text = el.querySelector('.MessageText')?.innerText || '';
@@ -54,9 +90,7 @@ function getMessageId(el) {
   }
 }
 
-// Вспомогательная функция: оставить в клоне группы только указанное сообщение по ID
 function filterGroupToMessage(groupClone, targetMessageId) {
-  // Удаляем все сообщения, кроме нужного
   const messages = groupClone.querySelectorAll('.Message.message-list-item');
   for (const msg of messages) {
     const msgId = msg.getAttribute('data-message-id');
@@ -65,11 +99,9 @@ function filterGroupToMessage(groupClone, targetMessageId) {
     }
   }
   
-  // Удаляем контейнер с аватаром, который растягивает группу
   const avatarContainers = groupClone.querySelectorAll('.UPrRM3Ks, .Avatar, [class*="avatar-container"]');
-  avatarContainers.forEach(el => el.style.height="100%");
+  avatarContainers.forEach(el => el.style.height = "100%");
   
-  // Сбрасываем фиксированные высоты
   groupClone.style.height = 'auto';
   groupClone.style.minHeight = '0';
   groupClone.style.maxHeight = 'none';
@@ -79,20 +111,16 @@ function filterGroupToMessage(groupClone, targetMessageId) {
 
 function extractMessage(el) {
   let text, time, sender;
-  let clonedElement;
+  let htmlContent;
 
   if (isTelegram) {
-    // Находим родительскую группу
     const group = el.closest('.sender-group-container');
     if (group) {
-      // Клонируем группу с вычисленными стилями
-      const groupClone = cloneWithComputedStyles(group);
-      // Оставляем только нужное сообщение
+      const groupClone = group.cloneNode(true); // обычное клонирование
       const msgId = el.getAttribute('data-message-id');
-      clonedElement = filterGroupToMessage(groupClone, msgId);
+      htmlContent = filterGroupToMessage(groupClone, msgId).outerHTML;
     } else {
-      // Если группы нет, клонируем само сообщение (запасной вариант)
-      clonedElement = cloneWithComputedStyles(el);
+      htmlContent = el.cloneNode(true).outerHTML;
     }
 
     const textEl = el.querySelector('.text-content');
@@ -102,21 +130,16 @@ function extractMessage(el) {
     const timeEl = el.querySelector('.message-time');
     time = parseTelegramTime(timeEl?.innerText?.trim() || '');
   } else {
-    // VK остаётся без изменений
+    // VK: клонируем статью целиком (для сохранения иконок)
+    const article = el.closest('article.ConvoHistory__messageBlock');
+    htmlContent = article ? article.cloneNode(true).outerHTML : el.cloneNode(true).outerHTML;
+
     const textEl = el.querySelector('.MessageText');
     text = textEl?.innerText?.trim() || '';
     const senderEl = el.querySelector('.PeerTitle__title');
     sender = senderEl?.innerText?.trim() || 'VK';
     const timeEl = el.querySelector('.ConvoMessageInfoWithoutBubbles__date');
     time = parseVKTime(timeEl?.innerText?.trim() || '');
-
-    clonedElement = cloneWithComputedStyles(el);
-
-    // Удаляем прелоадеры видео в VK
-    if (isVK) {
-      const loadingElements = clonedElement.querySelectorAll('.AttachVideoMessage__loading');
-      loadingElements.forEach(elem => elem.remove());
-    }
   }
 
   return {
@@ -125,7 +148,8 @@ function extractMessage(el) {
     sender,
     time,
     source: isTelegram ? 'telegram' : 'vk',
-    elementHTML: clonedElement.outerHTML
+    elementHTML: htmlContent,
+    styles: pageStyles // передаём собранные стили страницы
   };
 }
 
@@ -150,10 +174,8 @@ function scanMessages() {
   console.log('[Content] Scanning messages on', location.hostname);
   let selector;
   if (isTelegram) {
-    // Универсальный селектор для Telegram Web
     selector = '.Message.message-list-item, .message-list-item';
   } else {
-    // VK: основной селектор сообщений
     selector = '.ConvoHistory__messageWrapper .ConvoMessageWithoutBubble, .im-mess-stack--mess';
   }
   
@@ -183,24 +205,62 @@ function scanMessages() {
   }
 }
 
-// Запускаем сканирование при загрузке и при изменениях DOM
 setTimeout(scanMessages, 1000);
-setInterval(scanMessages, 2000); // более частое сканирование
+setInterval(scanMessages, 2000);
 
 const observer = new MutationObserver(() => scanMessages());
 observer.observe(document.body, { childList: true, subtree: true });
 
-// Также реагируем на события скролла, т.к. новые сообщения могут подгружаться при прокрутке
 window.addEventListener('scroll', () => {
-  // Небольшая задержка, чтобы DOM обновился
   setTimeout(scanMessages, 300);
 }, { passive: true });
 
+// Функция сбора ВСЕХ стилей страницы с заменой относительных путей
+function collectAllStylesWithAbsoluteUrls() {
+  const origin = location.origin;
+  let combinedCSS = '';
+  
+  // 1. Встроенные <style>
+  document.querySelectorAll('style').forEach(style => {
+    combinedCSS += style.textContent + '\n';
+  });
+  
+  // 2. Стили из CSSStyleSheet (доступные)
+  const sheets = Array.from(document.styleSheets);
+  sheets.forEach(sheet => {
+    try {
+      const rules = Array.from(sheet.cssRules || sheet.rules || []);
+      rules.forEach(rule => {
+        combinedCSS += rule.cssText + '\n';
+      });
+    } catch (e) {
+      // Пропускаем заблокированные CORS-листы
+    }
+  });
+  
+  // Заменяем все url(...) на абсолютные, если они не http(s)/data
+  combinedCSS = combinedCSS.replace(/url\(["']?([^)"']+)["']?\)/gi, (match, url) => {
+    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
+      return match;
+    }
+    const absoluteUrl = new URL(url, origin).href;
+    return `url("${absoluteUrl}")`;
+  });
+  
+  return combinedCSS;
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === 'SCAN_NOW') {
-    // Используем requestAnimationFrame для щадящего сканирования
-    requestAnimationFrame(() => {
-      scanMessages();
+    scanMessages();
+  }
+  if (message.type === 'COLLECT_STYLES') {
+    const css = collectAllStylesWithAbsoluteUrls();
+    const source = isTelegram ? 'telegram' : 'vk';
+    const storageKey = `${source}_styles`;
+    chrome.storage.local.set({ [storageKey]: css }, () => {
+      sendResponse({ success: true });
     });
+    return true; // для асинхронного sendResponse
   }
 });

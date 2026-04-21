@@ -1,3 +1,8 @@
+// После получения roomInfo
+setTimeout(() => {
+  chrome.runtime.sendMessage({ type: 'REQUEST_STYLES_COLLECTION', roomId });
+}, 1500);
+
 let roomId = null;
 let roomKey = null;
 const messagesMap = new Map();
@@ -17,13 +22,11 @@ chrome.runtime.sendMessage({ type: 'GET_ROOM_INFO', roomId }, (response) => {
   }
 });
 
-// Запрашиваем первоначальное сканирование
 setTimeout(() => {
   console.log('[Messenger] Requesting initial scan');
   chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', roomId });
 }, 2000);
 
-// Регулярное сканирование (можно оставить как есть)
 setInterval(() => {
   if (roomId) {
     chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', roomId });
@@ -37,21 +40,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-function addMessages(source, messages) {
+async function addMessages(source, messages) {
   const container = document.getElementById('messages-container');
   
-  messages.forEach(async (msg) => {
-    if (messagesMap.has(msg.id)) return;
+  // Загружаем стили для источника
+  const storageKey = `${source}_styles`;
+  const styles = await new Promise(resolve => {
+    chrome.storage.local.get(storageKey, result => resolve(result[storageKey] || ''));
+  });
+  
+  for (const msg of messages) {
+    if (messagesMap.has(msg.id)) continue;
     
-    let displayText = msg.text;
     let encrypted = false;
     if (roomKey && msg.text.startsWith('[ENC]')) {
-      try {
-        displayText = await decryptMessage(msg.text.substring(5), roomKey);
-        encrypted = true;
-      } catch (e) {
-        displayText = '[Ошибка расшифровки]';
-      }
+      encrypted = true;
     }
     
     const wrapper = document.createElement('div');
@@ -59,11 +62,7 @@ function addMessages(source, messages) {
     wrapper.dataset.id = msg.id;
     wrapper.dataset.time = msg.time;
     
-    // Вставляем оригинальный HTML без санитизации
-    const contentDiv = document.createElement('div');
-    contentDiv.className = 'message-original-content';
-    contentDiv.innerHTML = msg.elementHTML; // отключена защита
-    
+    // Заголовок сообщения (упрощённый)
     const header = document.createElement('div');
     header.className = 'message-header';
     
@@ -73,13 +72,9 @@ function addMessages(source, messages) {
       : 'https://vk.com/favicon.ico';
     sourceIcon.alt = source;
     
-    // Добавляем текстовую метку источника (по желанию)
     const sourceLabel = document.createElement('span');
     sourceLabel.className = 'source-label';
     sourceLabel.textContent = source === 'telegram' ? 'Telegram' : 'VK';
-    sourceLabel.style.marginLeft = '6px';
-    sourceLabel.style.fontSize = '12px';
-    sourceLabel.style.color = '#8d9aa9';
     
     const timeSpan = document.createElement('span');
     timeSpan.className = 'time';
@@ -88,25 +83,60 @@ function addMessages(source, messages) {
     const lockSpan = document.createElement('span');
     lockSpan.className = `lock-icon ${encrypted ? 'lock-closed' : 'lock-open'}`;
     lockSpan.textContent = encrypted ? '🔒' : '🔓';
-    lockSpan.style.marginLeft = 'auto';
     
     header.appendChild(sourceIcon);
     header.appendChild(sourceLabel);
     header.appendChild(timeSpan);
     header.appendChild(lockSpan);
-    
     wrapper.appendChild(header);
-    wrapper.appendChild(contentDiv);
+    
+    // Создаём iframe
+    const iframe = document.createElement('iframe');
+    iframe.className = 'message-iframe';
+    iframe.sandbox = 'allow-same-origin';
+    
+    wrapper.appendChild(iframe);
+    container.appendChild(wrapper);
+    
+    // Подгонка высоты после загрузки
+    iframe.onload = () => {
+      try {
+        const doc = iframe.contentDocument;
+        const height = doc.body.scrollHeight;
+        iframe.style.height = height + 'px';
+      } catch (e) {}
+    };
+    // HTML для iframe
+    const baseUrl = source === 'telegram' ? 'https://web.telegram.org' : 'https://vk.com';
+    const docType = '<!DOCTYPE html>';
+    const html = `
+      <html>
+        <head>
+          <base href="${baseUrl}">
+          <meta name="color-scheme" content="dark">
+          <style>
+            html, body { 
+              margin: 0; 
+              padding: 0; 
+              background: #0e1621 !important;
+              overflow:hidden;
+            }
+            ${styles}
+          </style>
+        </head>
+        <body>${msg.elementHTML}</body>
+      </html>
+    `;
+    
+    iframe.srcdoc = docType + html;
     
     messagesMap.set(msg.id, wrapper);
     insertSorted(container, wrapper, msg.time);
-  });
+  }
 }
 
-// Оптимизированная вставка с сортировкой по времени
 function insertSorted(container, newEl, time) {
   const children = Array.from(container.children);
-  // Бинарный поиск для ускорения
   let low = 0, high = children.length;
   while (low < high) {
     const mid = (low + high) >>> 1;
@@ -152,7 +182,6 @@ async function sendMessage() {
   }, 2000);
 }
 
-// ========== СИНХРОНИЗАЦИЯ ПРОКРУТКИ ==========
 const scrollContainer = document.getElementById('messages-container');
 let scrollTimeout;
 
@@ -174,9 +203,8 @@ scrollContainer.addEventListener('scroll', () => {
     }
   }, 150);
 });
-// =========================================
 
-// Crypto functions (без изменений)
+// Крипто-функции (без изменений)
 async function deriveKey(password, salt) {
   const enc = new TextEncoder();
   const keyMaterial = await crypto.subtle.importKey(

@@ -13,8 +13,7 @@ body, html {
 .messenger-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  width: 100%;
+  height: 100vh;
   color: #fff;
 }
 
@@ -64,8 +63,8 @@ body, html {
 .message-wrapper {
   background: transparent;
   border-radius: 8px;
-  min-width:max-content;
-  min-height:max-content;
+  min-width: max-content;
+  min-height: max-content;
 }
 
 .message-header {
@@ -103,14 +102,17 @@ body, html {
   color: #f44336;
 }
 
-.message-original-content {
-  padding: 8px 12px;
-  background: inherit;
-}
-
-.message-original-content * {
+/* iframe сообщения */
+.message-iframe {
+  min-width:100%;
   max-width: 100%;
-  word-wrap: break-word;
+  height:auto;
+  border: none;
+  overflow:hidden;
+  padding:0;
+  margin:0;
+  background: transparent;
+  display: block;
 }
 
 .input-area {
