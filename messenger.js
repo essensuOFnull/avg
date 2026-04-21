@@ -55,7 +55,7 @@ chrome.runtime.sendMessage({ type: 'GET_ROOM_INFO', roomId }, resp => {
   document.getElementById('room-info').textContent = `Комната ${roomId.slice(-4)} ${roomKey ? '🔐' : ''}`;
 });
 
-loadAndApplyStyles().then(() => chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', roomId }));
+loadAndApplyStyles().then(() => chrome.runtime.sendMessage({ type: 'SCAN_NOW', roomId }));
 setTimeout(() => {
   chrome.storage.local.get(['tg_raw_styles','vk_raw_styles'], res => { if (!res.tg_raw_styles || !res.vk_raw_styles) requestStylesCollection(); });
 }, 2000);
@@ -121,7 +121,7 @@ function insertSorted(container, el, time, numericId) {
 
 document.getElementById('send-button').onclick = sendMessage;
 document.getElementById('message-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });
-document.getElementById('refresh-btn').onclick = () => chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', roomId });
+document.getElementById('refresh-btn').onclick = () => chrome.runtime.sendMessage({ type: 'SCAN_NOW', roomId });
 
 async function sendMessage() {
   const input = document.getElementById('message-input');
@@ -131,7 +131,7 @@ async function sendMessage() {
   if (roomKey) final = '[ENC]' + await encryptMessage(text, roomKey);
   chrome.runtime.sendMessage({ type: 'SEND_MESSAGE', roomId, text: final });
   input.value = '';
-  setTimeout(() => chrome.runtime.sendMessage({ type: 'REQUEST_SCAN', roomId }), 2000);
+  setTimeout(() => chrome.runtime.sendMessage({ type: 'SCAN_NOW', roomId }), 2000);
 }
 
 const scrollContainer = document.getElementById('messages-container');

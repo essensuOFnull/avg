@@ -60,7 +60,8 @@ function filterGroupToMessage(groupClone, targetId) {
   groupClone.querySelectorAll('.Message.message-list-item').forEach(msg => {
     if (msg.getAttribute('data-message-id') !== targetId) msg.remove();
   });
-  groupClone.querySelectorAll('.UPrRM3Ks, .Avatar, [class*="avatar-container"]').forEach(el => el.style.height = '100%');
+  groupClone.querySelectorAll('.UPrRM3Ks').forEach(el => el.style.height = '100%');
+  groupClone.querySelectorAll('.Avatar').forEach(el => el.style.maxHeight = 'none');
   groupClone.style.cssText = 'height:auto; min-height:0; max-height:none';
   return groupClone;
 }
