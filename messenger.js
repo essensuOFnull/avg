@@ -68,11 +68,14 @@ async function addMessages(source, messages) {
   const container = document.getElementById('messages-container');
   for (const msg of messages) {
     if (messagesMap.has(msg.id)) continue;
+
     const encrypted = roomKey && msg.text.startsWith('[ENC]');
     const wrapper = document.createElement('div');
     wrapper.className = `message-wrapper ${source === 'telegram' ? 'tg-style' : 'vk-style'}`;
     wrapper.dataset.id = msg.id;
     wrapper.dataset.time = msg.time;
+    wrapper.dataset.numericId = msg.numericId;   // <-- сохраняем
+
     const header = document.createElement('div');
     header.className = 'message-header';
     const icon = document.createElement('img');
@@ -82,7 +85,7 @@ async function addMessages(source, messages) {
     label.textContent = source === 'telegram' ? 'Telegram' : 'VK';
     const timeSpan = document.createElement('span');
     timeSpan.className = 'time';
-    timeSpan.textContent = new Date(msg.time).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+    timeSpan.textContent = msg.time;
     const lock = document.createElement('span');
     lock.className = `lock-icon ${encrypted ? 'lock-closed' : 'lock-open'}`;
     lock.textContent = encrypted ? '🔒' : '🔓';
@@ -93,17 +96,28 @@ async function addMessages(source, messages) {
     wrapper.append(header, content);
     container.appendChild(wrapper);
     messagesMap.set(msg.id, wrapper);
-    insertSorted(container, wrapper, msg.time);
+    insertSorted(container, wrapper, msg.time, msg.numericId);   // <-- два параметра
   }
 }
 
-function insertSorted(container, el, time) {
+function insertSorted(container, el, time, numericId) {
   const children = Array.from(container.children);
   let lo = 0, hi = children.length;
-  while (lo < hi) { const mid = (lo+hi)>>1; if ((parseInt(children[mid].dataset.time)||0) < time) lo = mid+1; else hi = mid; }
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    const midTime = parseInt(children[mid].dataset.time, 10) || 0;
+    const midId = parseInt(children[mid].dataset.numericId, 10) || 0;
+
+    if (midTime < time || (midTime === time && midId < numericId)) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
   container.insertBefore(el, children[lo] || null);
   container.scrollTop = container.scrollHeight;
 }
+
 
 document.getElementById('send-button').onclick = sendMessage;
 document.getElementById('message-input').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } });

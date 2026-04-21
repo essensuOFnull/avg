@@ -66,7 +66,8 @@ function filterGroupToMessage(groupClone, targetId) {
 }
 
 function extractMessage(el) {
-  let html, text, sender, time;
+  let html, text, sender, time, numericId = 0;
+
   if (isTelegram) {
     const group = el.closest('.sender-group-container');
     if (group) {
@@ -78,6 +79,10 @@ function extractMessage(el) {
     const t = el.querySelector('.message-time')?.innerText?.trim() || '';
     const [h,m] = t.split(':').map(Number);
     time = (isNaN(h)||isNaN(m)) ? Date.now() : new Date().setHours(h,m,0,0);
+
+    // Извлекаем числовой ID из id="message-12345"
+    const idMatch = el.id?.match(/message-(\d+)/);
+    if (idMatch) numericId = parseInt(idMatch[1], 10);
   } else {
     const article = el.closest('article.ConvoHistory__messageBlock');
     html = article ? article.cloneNode(true).outerHTML : el.cloneNode(true).outerHTML;
@@ -86,8 +91,21 @@ function extractMessage(el) {
     const t = el.querySelector('.ConvoMessageInfoWithoutBubbles__date')?.innerText?.trim() || '';
     const [h,m] = t.split(':').map(Number);
     time = (isNaN(h)||isNaN(m)) ? Date.now() : new Date().setHours(h,m,0,0);
+
+    // Извлекаем числовой ID из data-itemkey или data-msgid
+    const itemKey = article?.getAttribute('data-itemkey') || el.getAttribute('data-msgid');
+    if (itemKey) numericId = parseInt(itemKey, 10);
   }
-  return { id: getMessageId(el), text, sender, time, source: isTelegram ? 'telegram' : 'vk', elementHTML: html };
+
+  return {
+    id: getMessageId(el),
+    text,
+    sender,
+    time,
+    numericId,                    // <-- добавляем
+    source: isTelegram ? 'telegram' : 'vk',
+    elementHTML: html
+  };
 }
 
 function scanMessages() {
