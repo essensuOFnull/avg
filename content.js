@@ -121,7 +121,7 @@ function scanMessages() {
 }
 
 setTimeout(scanMessages, 1000);
-setInterval(scanMessages, 2000);
+setInterval(scanMessages, 500);
 new MutationObserver(() => scanMessages()).observe(document.body, { childList: true, subtree: true });
 window.addEventListener('scroll', () => setTimeout(scanMessages, 300), { passive: true });
 
