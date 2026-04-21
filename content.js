@@ -4,263 +4,116 @@ const processedIds = new Set();
 
 console.log('[Content] Loaded on', location.hostname);
 
-// --- БЛОК ОТКЛЮЧЕНИЯ АВТОВОСПРОИЗВЕДЕНИЯ ДЛЯ VK (без изменений) ---
 if (isVK) {
   const style = document.createElement('style');
-  style.textContent = `
-    video, audio {
-      autoplay: false !important;
-      -webkit-media-controls-auto-play-button: none !important;
-    }
-  `;
+  style.textContent = `video, audio { autoplay: false !important; -webkit-media-controls-auto-play-button: none !important; }`;
   document.head.appendChild(style);
-  
-  function pauseAllMedia() {
-    document.querySelectorAll('video, audio').forEach(el => {
-      el.muted = true;
-      el.pause();
-      el.autoplay = false;
-    });
-  }
-  setInterval(pauseAllMedia, 2000);
-  
-  const mediaObserver = new MutationObserver((mutations) => {
-    mutations.forEach(mut => {
-      mut.addedNodes.forEach(node => {
-        if (node.nodeName === 'VIDEO' || node.nodeName === 'AUDIO') {
-          node.muted = true;
-          node.pause();
-          node.autoplay = false;
-        } else if (node.querySelectorAll) {
-          node.querySelectorAll('video, audio').forEach(el => {
-            el.muted = true;
-            el.pause();
-            el.autoplay = false;
-          });
-        }
-      });
-    });
-  });
-  mediaObserver.observe(document.body, { childList: true, subtree: true });
-}
-// -------------------------------------------------
-
-// Функция для извлечения всех стилей текущей страницы
-function getAllStyles() {
-  let styleText = '';
-  try {
-    const styleSheets = document.styleSheets;
-    for (let sheet of styleSheets) {
-      try {
-        const rules = sheet.cssRules || sheet.rules;
-        if (rules) {
-          for (let rule of rules) {
-            styleText += rule.cssText + '\n';
-          }
-        }
-      } catch (e) {
-        // Межсайтовые таблицы стилей недоступны – игнорируем
-        console.warn('[Content] Cannot access stylesheet:', e);
-      }
-    }
-  } catch (e) {}
-  
-  // Добавляем инлайн-стили, определённые в <style>
-  document.querySelectorAll('style').forEach(style => {
-    styleText += style.textContent + '\n';
-  });
-  
-  return styleText;
+  setInterval(() => document.querySelectorAll('video, audio').forEach(el => { el.muted = true; el.pause(); el.autoplay = false; }), 2000);
+  new MutationObserver(m => m.forEach(mut => mut.addedNodes.forEach(node => {
+    if (node.nodeName === 'VIDEO' || node.nodeName === 'AUDIO') { node.muted = true; node.pause(); node.autoplay = false; }
+    else if (node.querySelectorAll) node.querySelectorAll('video, audio').forEach(el => { el.muted = true; el.pause(); el.autoplay = false; });
+  }))).observe(document.body, { childList: true, subtree: true });
 }
 
-// Однократно собираем стили страницы
-const pageStyles = getAllStyles();
-console.log('[Content] Collected styles length:', pageStyles.length);
+async function collectAllStylesDeep() {
+  let combined = '';
+  const origin = location.origin;
+
+  // встроенные <style>
+  document.querySelectorAll('style').forEach(s => combined += s.textContent + '\n');
+
+  // внешние <link>
+  const links = Array.from(document.querySelectorAll('link[rel="stylesheet"]'));
+  await Promise.all(links.map(async link => {
+    try {
+      const res = await fetch(link.href);
+      const css = await res.text();
+      combined += css + '\n';
+    } catch(e) { console.warn('Failed fetch', link.href, e); }
+  }));
+
+  // динамические правила из document.styleSheets (дополнительно)
+  Array.from(document.styleSheets).forEach(sheet => {
+    try {
+      Array.from(sheet.cssRules || sheet.rules || []).forEach(rule => combined += rule.cssText + '\n');
+    } catch(e) {}
+  });
+
+  // преобразование url(...) в абсолютные
+  combined = combined.replace(/url\(["']?([^)"']+)["']?\)/gi, (match, url) => {
+    if (url.startsWith('http') || url.startsWith('data:')) return match;
+    try { return `url("${new URL(url, origin).href}")`; } catch(e) { return match; }
+  });
+  return combined;
+}
 
 function getMessageId(el) {
-  if (isTelegram) {
-    const msgId = el.getAttribute('data-message-id') || '';
-    return `tg-${msgId}`;
-  } else {
-    const msgId = el.getAttribute('data-msgid') || el.getAttribute('data-id');
-    if (msgId) return `vk-${msgId}`;
-    const text = el.querySelector('.MessageText')?.innerText || '';
-    const time = el.querySelector('.ConvoMessageInfoWithoutBubbles__date')?.innerText || '';
-    return `vk-${text}-${time}`;
-  }
+  if (isTelegram) return `tg-${el.getAttribute('data-message-id') || ''}`;
+  const msgId = el.getAttribute('data-msgid') || el.getAttribute('data-id');
+  if (msgId) return `vk-${msgId}`;
+  const text = el.querySelector('.MessageText')?.innerText || '';
+  const time = el.querySelector('.ConvoMessageInfoWithoutBubbles__date')?.innerText || '';
+  return `vk-${text}-${time}`;
 }
 
-function filterGroupToMessage(groupClone, targetMessageId) {
-  const messages = groupClone.querySelectorAll('.Message.message-list-item');
-  for (const msg of messages) {
-    const msgId = msg.getAttribute('data-message-id');
-    if (msgId !== targetMessageId) {
-      msg.remove();
-    }
-  }
-  
-  const avatarContainers = groupClone.querySelectorAll('.UPrRM3Ks, .Avatar, [class*="avatar-container"]');
-  avatarContainers.forEach(el => el.style.height = "100%");
-  
-  groupClone.style.height = 'auto';
-  groupClone.style.minHeight = '0';
-  groupClone.style.maxHeight = 'none';
-  
+function filterGroupToMessage(groupClone, targetId) {
+  groupClone.querySelectorAll('.Message.message-list-item').forEach(msg => {
+    if (msg.getAttribute('data-message-id') !== targetId) msg.remove();
+  });
+  groupClone.querySelectorAll('.UPrRM3Ks, .Avatar, [class*="avatar-container"]').forEach(el => el.style.height = '100%');
+  groupClone.style.cssText = 'height:auto; min-height:0; max-height:none';
   return groupClone;
 }
 
 function extractMessage(el) {
-  let text, time, sender;
-  let htmlContent;
-
+  let html, text, sender, time;
   if (isTelegram) {
     const group = el.closest('.sender-group-container');
     if (group) {
-      const groupClone = group.cloneNode(true); // обычное клонирование
-      const msgId = el.getAttribute('data-message-id');
-      htmlContent = filterGroupToMessage(groupClone, msgId).outerHTML;
-    } else {
-      htmlContent = el.cloneNode(true).outerHTML;
-    }
-
-    const textEl = el.querySelector('.text-content');
-    text = textEl?.innerText?.trim() || '';
-    const senderEl = el.querySelector('.sender-title') || group?.querySelector('.sender-title');
-    sender = senderEl?.innerText?.trim() || 'Telegram';
-    const timeEl = el.querySelector('.message-time');
-    time = parseTelegramTime(timeEl?.innerText?.trim() || '');
+      const clone = group.cloneNode(true);
+      html = filterGroupToMessage(clone, el.getAttribute('data-message-id')).outerHTML;
+    } else html = el.cloneNode(true).outerHTML;
+    text = el.querySelector('.text-content')?.innerText?.trim() || '';
+    sender = (el.closest('.sender-group-container')?.querySelector('.sender-title')?.innerText || 'Telegram').trim();
+    const t = el.querySelector('.message-time')?.innerText?.trim() || '';
+    const [h,m] = t.split(':').map(Number);
+    time = (isNaN(h)||isNaN(m)) ? Date.now() : new Date().setHours(h,m,0,0);
   } else {
-    // VK: клонируем статью целиком (для сохранения иконок)
     const article = el.closest('article.ConvoHistory__messageBlock');
-    htmlContent = article ? article.cloneNode(true).outerHTML : el.cloneNode(true).outerHTML;
-
-    const textEl = el.querySelector('.MessageText');
-    text = textEl?.innerText?.trim() || '';
-    const senderEl = el.querySelector('.PeerTitle__title');
-    sender = senderEl?.innerText?.trim() || 'VK';
-    const timeEl = el.querySelector('.ConvoMessageInfoWithoutBubbles__date');
-    time = parseVKTime(timeEl?.innerText?.trim() || '');
+    html = article ? article.cloneNode(true).outerHTML : el.cloneNode(true).outerHTML;
+    text = el.querySelector('.MessageText')?.innerText?.trim() || '';
+    sender = el.querySelector('.PeerTitle__title')?.innerText?.trim() || 'VK';
+    const t = el.querySelector('.ConvoMessageInfoWithoutBubbles__date')?.innerText?.trim() || '';
+    const [h,m] = t.split(':').map(Number);
+    time = (isNaN(h)||isNaN(m)) ? Date.now() : new Date().setHours(h,m,0,0);
   }
-
-  return {
-    id: getMessageId(el),
-    text,
-    sender,
-    time,
-    source: isTelegram ? 'telegram' : 'vk',
-    elementHTML: htmlContent,
-    styles: pageStyles // передаём собранные стили страницы
-  };
-}
-
-function parseTelegramTime(timeStr) {
-  const [hours, minutes] = timeStr.split(':').map(Number);
-  if (isNaN(hours) || isNaN(minutes)) return Date.now();
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
-  return date.getTime();
-}
-
-function parseVKTime(timeStr) {
-  const clean = timeStr.trim();
-  const [hours, minutes] = clean.split(':').map(Number);
-  if (isNaN(hours) || isNaN(minutes)) return Date.now();
-  const date = new Date();
-  date.setHours(hours, minutes, 0, 0);
-  return date.getTime();
+  return { id: getMessageId(el), text, sender, time, source: isTelegram ? 'telegram' : 'vk', elementHTML: html };
 }
 
 function scanMessages() {
-  console.log('[Content] Scanning messages on', location.hostname);
-  let selector;
-  if (isTelegram) {
-    selector = '.Message.message-list-item, .message-list-item';
-  } else {
-    selector = '.ConvoHistory__messageWrapper .ConvoMessageWithoutBubble, .im-mess-stack--mess';
-  }
-  
-  const messages = document.querySelectorAll(selector);
-  console.log(`[Content] Found ${messages.length} potential message elements`);
-  const newMessages = [];
-  
-  messages.forEach(el => {
+  const selector = isTelegram ? '.Message.message-list-item, .message-list-item' : '.ConvoHistory__messageWrapper .ConvoMessageWithoutBubble, .im-mess-stack--mess';
+  const newMsgs = [];
+  document.querySelectorAll(selector).forEach(el => {
     try {
       const id = getMessageId(el);
-      if (!processedIds.has(id)) {
-        processedIds.add(id);
-        newMessages.push(extractMessage(el));
-      }
-    } catch (e) {
-      console.warn('[Content] Error extracting message', e);
-    }
+      if (!processedIds.has(id)) { processedIds.add(id); newMsgs.push(extractMessage(el)); }
+    } catch(e) {}
   });
-  
-  if (newMessages.length > 0) {
-    console.log(`[Content] Sending ${newMessages.length} new messages`);
-    chrome.runtime.sendMessage({
-      type: 'NEW_MESSAGES',
-      source: isTelegram ? 'telegram' : 'vk',
-      messages: newMessages
-    });
-  }
+  if (newMsgs.length) chrome.runtime.sendMessage({ type: 'NEW_MESSAGES', source: isTelegram ? 'telegram' : 'vk', messages: newMsgs });
 }
 
 setTimeout(scanMessages, 1000);
 setInterval(scanMessages, 2000);
+new MutationObserver(() => scanMessages()).observe(document.body, { childList: true, subtree: true });
+window.addEventListener('scroll', () => setTimeout(scanMessages, 300), { passive: true });
 
-const observer = new MutationObserver(() => scanMessages());
-observer.observe(document.body, { childList: true, subtree: true });
-
-window.addEventListener('scroll', () => {
-  setTimeout(scanMessages, 300);
-}, { passive: true });
-
-// Функция сбора ВСЕХ стилей страницы с заменой относительных путей
-function collectAllStylesWithAbsoluteUrls() {
-  const origin = location.origin;
-  let combinedCSS = '';
-  
-  // 1. Встроенные <style>
-  document.querySelectorAll('style').forEach(style => {
-    combinedCSS += style.textContent + '\n';
-  });
-  
-  // 2. Стили из CSSStyleSheet (доступные)
-  const sheets = Array.from(document.styleSheets);
-  sheets.forEach(sheet => {
-    try {
-      const rules = Array.from(sheet.cssRules || sheet.rules || []);
-      rules.forEach(rule => {
-        combinedCSS += rule.cssText + '\n';
-      });
-    } catch (e) {
-      // Пропускаем заблокированные CORS-листы
-    }
-  });
-  
-  // Заменяем все url(...) на абсолютные, если они не http(s)/data
-  combinedCSS = combinedCSS.replace(/url\(["']?([^)"']+)["']?\)/gi, (match, url) => {
-    if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('data:')) {
-      return match;
-    }
-    const absoluteUrl = new URL(url, origin).href;
-    return `url("${absoluteUrl}")`;
-  });
-  
-  return combinedCSS;
-}
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'SCAN_NOW') {
-    scanMessages();
-  }
-  if (message.type === 'COLLECT_STYLES') {
-    const css = collectAllStylesWithAbsoluteUrls();
-    const source = isTelegram ? 'telegram' : 'vk';
-    const storageKey = `${source}_styles`;
-    chrome.storage.local.set({ [storageKey]: css }, () => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.type === 'SCAN_NOW') scanMessages();
+  if (msg.type === 'COLLECT_STYLES') {
+    collectAllStylesDeep().then(css => {
+      chrome.runtime.sendMessage({ type: 'SAVE_STYLES', source: isTelegram ? 'telegram' : 'vk', css });
       sendResponse({ success: true });
-    });
-    return true; // для асинхронного sendResponse
+    }).catch(err => sendResponse({ success: false }));
+    return true;
   }
 });

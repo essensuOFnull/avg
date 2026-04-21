@@ -1,80 +1,25 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <meta charset="UTF-8">
-  <style>
-    body {
-      width: 450px;
-      padding: 16px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: #f5f5f5;
-    }
-    h3 {
-      margin-top: 0;
-      color: #2b5278;
-    }
-    .rooms-container {
-      max-height: 300px;
-      overflow-y: auto;
-      background: white;
-      border-radius: 8px;
-      padding: 8px;
-      margin-bottom: 16px;
-    }
-    .room-item {
-      border: 1px solid #ddd;
-      border-radius: 6px;
-      padding: 10px;
-      margin-bottom: 8px;
-      background: #fff;
-    }
-    .room-item button {
-      margin-top: 8px;
-      width: 100%;
-    }
-    input {
-      width: 100%;
-      padding: 8px;
-      margin-bottom: 8px;
-      border: 1px solid #ccc;
-      border-radius: 4px;
-      box-sizing: border-box;
-    }
-    button {
-      background: #2b5278;
-      color: white;
-      border: none;
-      padding: 8px 12px;
-      border-radius: 4px;
-      cursor: pointer;
-      font-weight: 500;
-    }
-    button:hover {
-      background: #1e3a5f;
-    }
-    .small {
-      font-size: 12px;
-      color: #666;
-      margin-top: 4px;
-    }
-  </style>
-</head>
+<head><meta charset="UTF-8"><style>
+body { width: 450px; padding: 16px; font-family: sans-serif; background: #f5f5f5; }
+h3 { margin-top: 0; color: #2b5278; }
+.rooms-container { max-height: 300px; overflow-y: auto; background: white; border-radius: 8px; padding: 8px; margin-bottom: 16px; }
+.room-item { border: 1px solid #ddd; border-radius: 6px; padding: 10px; margin-bottom: 8px; background: #fff; }
+.room-item button { margin-top: 8px; width: 100%; }
+input { width: 100%; padding: 8px; margin-bottom: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+button { background: #2b5278; color: white; border: none; padding: 8px 12px; border-radius: 4px; cursor: pointer; }
+button:hover { background: #1e3a5f; }
+.small { font-size: 12px; color: #666; margin-top: 4px; }
+</style></head>
 <body>
-  <h3>🗂️ Комнаты UniMessenger</h3>
-  <div id="rooms-list" class="rooms-container">
-    <!-- Сюда будут добавлены комнаты -->
-  </div>
-  
-  <h4>➕ Добавить комнату</h4>
-  <input type="text" id="tg-url" placeholder="URL чата Telegram (https://web.telegram.org/a/#-123456789)" />
-  <input type="text" id="vk-url" placeholder="URL чата VK (https://vk.com/im?sel=123456789)" />
-  <input type="password" id="enc-key" placeholder="Ключ шифрования (опционально)" />
-  <button id="add-room">Добавить</button>
-  
-  <div class="small">
-    ⚠️ Для работы необходимо быть авторизованным в Telegram Web и VK в браузере.
-  </div>
-  
-  <script src="manager.js"></script>
+<h3>🗂️ Комнаты UniMessenger</h3>
+<div id="rooms-list" class="rooms-container"></div>
+<h4>➕ Добавить комнату</h4>
+<input type="text" id="tg-url" placeholder="URL чата Telegram (https://web.telegram.org/a/#-123456789)" />
+<input type="text" id="vk-url" placeholder="URL чата VK (https://vk.com/im?sel=123456789)" />
+<input type="password" id="enc-key" placeholder="Ключ шифрования (опционально)" />
+<button id="add-room">Добавить</button>
+<div class="small">⚠️ Для работы необходимо быть авторизованным в Telegram Web и VK в браузере.</div>
+<script src="manager.js"></script>
 </body>
 </html>
