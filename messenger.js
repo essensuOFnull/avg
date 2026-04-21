@@ -120,6 +120,7 @@ async function addMessages(source, messages) {
               padding: 0; 
               background: #0e1621 !important;
               overflow:hidden;
+              max-height:max-content;
             }
             ${styles}
           </style>
